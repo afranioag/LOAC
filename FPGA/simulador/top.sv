@@ -14,51 +14,65 @@ module top(input  logic clk_2,
              lcd_ALUResult, lcd_Result, lcd_WriteData, lcd_ReadData, 
            output logic lcd_MemWrite, lcd_Branch, lcd_MemtoReg, lcd_RegWrite);
 
-enum logic [1:0] {parada, codigo1, codigo2, codigo3} estado;
 
-logic [3:0] codigo;
-logic cartao, reset;
-logic [2:0] tentativas;
+  always_comb begin
+    LED <= SWI | clk_2;
+    SEG <= SWI;
+    lcd_WriteData <= SWI;
+    lcd_pc <= 'h12;
+    lcd_instruction <= 'h34567890;
+    lcd_SrcA <= 'hab;
+    lcd_SrcB <= 'hcd;
+    lcd_ALUResult <= 'hef;
+    lcd_Result <= 'h11;
+    lcd_ReadData <= 'h33;
+    lcd_MemWrite <= SWI[0];
+    lcd_Branch <= SWI[1];
+    lcd_MemtoReg <= SWI[2];
+    lcd_RegWrite <= SWI[3];
+    for(int i=0; i<NREGS_TOP; i++) lcd_registrador[i] <= i+i*16;
+    lcd_a <= {56'h1234567890ABCD, SWI};
+    lcd_b <= {SWI, 56'hFEDCBA09876543};
+  end
 
-always_comb begin
-	codigo <= SWI[6:4];
-	cartao <= SWI[1];
-	reset <= SWI[0];
-end
+    // Número de dígitos hexadecimais.
+    // Pro 10 e acho que pro 9 têm que ser 15.
+    parameter q = 12;
+    parameter t = 64'd1<<(4*q);
+    parameter m = 4*t;
 
-always_ff @(posedge clk_2 && posedge reset) begin
-	if(reset) begin
-		tentativas <= 0;
-		codigo <= 0;
-		estado <= parada;
-	end
-	else begin
-		unique case(estado)
-			parada: begin
-				if(codigo == 1 && cartao) estado <= codigo1;
-				else tentativas <= tentativas + 1;
-			end
-			
-			codigo1: begin
-				if(codigo == 3 && cartao) estado <= codigo2;
-				else tentativas <= tentativas + 1;
-			end
-			
-			codigo2: begin
-				if(codigo == 7 && cartao) estado <= codigo3;
-				else tentativas <= tentativas + 1;
-			end
-			
-		endcase
-	end
-end
+    // Aqui tem que ter vários bits de tamanho para dar certo.
+    // Pra 15 dígitos hexadecimais têm que ser 64 bits.
+    logic [49:0] a;
+    // Quanto mais d's, mais "paralelo" fica, ou seja, mais rápido.
+    logic [49:0] d1, d2, d3;
+    logic [49:0] pi;
+    logic reset;
 
-always_comb begin
-	LED[7] <= clk_2;
-	LED[2] <= cartao;
-	LED[0] <= (codigo == 7 && estado == codigo3);
-	LED[1] <= (tentativas == 3);
-	
-end
-  
+    always_comb begin
+        reset <= SWI[7];
+
+        d1 <= (m/a) - (m/(a+2));
+        d2 <= (m/(a+4)) - (m/(a+6));
+        d3 <= (m/(a+8)) - (m/(a+10));
+    end
+
+    always_ff@(posedge clk_2 or posedge reset) begin
+        if (reset) begin
+            a <= 1;
+            pi <= 0;
+        end
+        else begin
+            if (d1 > 0 && d2 > 0 && d3 > 0) begin
+                pi <= pi + d1 + d2 + d3;
+                a <= a + 12;
+                // a recebe o ultimo incremendo de 'a' nos d's + 2;
+            end
+        end
+    end
+
+    always_comb begin
+        lcd_b <= pi;
+    end
+
 endmodule
